@@ -1,4 +1,4 @@
-package traefik_maintenance_plugin
+package yatmp
 
 import (
 	"bytes"

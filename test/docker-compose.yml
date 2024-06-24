@@ -22,7 +22,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.test.rule=Host(`maintenance.test`)"
       - "traefik.http.routers.test.entrypoints=web"
-      - "traefik.http.routers.test.middlewares=maintenance@file"
+      - "traefik.http.routers.test.middlewares=yatmp@file"
     volumes:
       - ./services/test:/usr/share/nginx/html
     networks:
