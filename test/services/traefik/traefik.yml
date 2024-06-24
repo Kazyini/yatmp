@@ -3,7 +3,7 @@
 
 experimental:
   localPlugins:
-    maintenance:
+    yatmp:
       moduleName: github.com/Kazyini/yatmp
 
 api:

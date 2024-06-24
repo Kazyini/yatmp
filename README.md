@@ -1,4 +1,4 @@
-# Yet another Traefik Maintenance Plugin
+# Yet Another Traefik Maintenance Plugin
 
 Fork from https://github.com/programic/traefik-maintenance-plugin
 

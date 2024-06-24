@@ -1,8 +1,8 @@
 http:
   middlewares:
-    maintenance:
+    yatmp:
       plugin:
-        maintenance:
+        yatmp:
           informUrl: "http://inform/inform.json"
           informInterval: 5
           informTimeout: 3

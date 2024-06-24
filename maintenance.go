@@ -24,7 +24,7 @@ type Host struct {
 	AllowIps []string
 }
 
-type Maintenance struct {
+type yatmp struct {
 	name   string
 	next   http.Handler
 	config *Config
@@ -142,14 +142,14 @@ func (rw *ResponseWriter) WriteHeader(statusCode int) {
 func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
 	go Inform(config)
 
-	return &Maintenance{
+	return &yatmp{
 		name:   name,
 		next:   next,
 		config: config,
 	}, nil
 }
 
-func (a *Maintenance) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (a *yatmp) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if StatusCode != 404 {
 		if CheckIfMaintenance(req) {
 			wrappedWriter := &ResponseWriter{
