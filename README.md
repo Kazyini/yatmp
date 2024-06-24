@@ -1,8 +1,8 @@
-# Traefik Maintenance Plugin
+# Yet another Traefik Maintenance Plugin
 
 Fork from https://github.com/programic/traefik-maintenance-plugin
 
-Traefik maintenance plugin to show visitors a maintenance page. Useful when upgrading a production environment. 
+Yet another Traefik Maintenance Plugin to show visitors a maintenance page. Useful when upgrading a production environment. 
 
 Hosts (by regex) that are under maintenance are retrieved using an http request to an inform url. Permitted ips are retained (such as development team) and other visitors receive a maintenance page with status code `503 Service Unavailable`.
 
