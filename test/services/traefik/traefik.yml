@@ -1,0 +1,22 @@
+# log:
+#   level: DEBUG
+
+experimental:
+  localPlugins:
+    maintenance:
+      moduleName: github.com/Kazyini/yatmp
+
+api:
+  insecure: true
+
+providers:
+  docker:
+    watch: true
+    exposedByDefault: false
+    network: web
+  file:
+    directory: /etc/traefik/dynamic
+
+entrypoints:
+  web:
+    address: :80

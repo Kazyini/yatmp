@@ -1,0 +1,10 @@
+displayName: Yet another Traefik Maintenance Plugin
+summary: Show visitors a static maintenance page.
+iconPath: assets/icon.png
+type: middleware
+import: github.com/Kazyini/yatmp
+
+testData:
+  informUrl: "http://inform/inform.json"
+  informInterval: 10
+  informTimeout: 5

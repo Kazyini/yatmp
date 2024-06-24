@@ -1,0 +1,8 @@
+http:
+  middlewares:
+    maintenance:
+      plugin:
+        maintenance:
+          informUrl: "http://inform/inform.json"
+          informInterval: 5
+          informTimeout: 3

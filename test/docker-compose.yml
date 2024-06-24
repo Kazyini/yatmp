@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.9
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 8080:8080
+    networks:
+      - web
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/traefik/dynamic:/etc/traefik/dynamic
+      - ./services/traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ../:/plugins-local/src/github.com/Kazyini/yatmp
+
+  test:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.test.rule=Host(`maintenance.test`)"
+      - "traefik.http.routers.test.entrypoints=web"
+      - "traefik.http.routers.test.middlewares=maintenance@file"
+    volumes:
+      - ./services/test:/usr/share/nginx/html
+    networks:
+      - web
+
+  inform:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.inform.rule=Host(`inform.test`)"
+      - "traefik.http.routers.inform.entrypoints=web"
+    volumes:
+      - ./services/inform:/usr/share/nginx/html
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
