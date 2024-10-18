@@ -1,7 +1,6 @@
 package yatmp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"log"
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,16 +28,14 @@ type yatmp struct {
 	name   string
 	next   http.Handler
 	config *Config
+	hosts  []Host
+	mu     sync.RWMutex
 }
 
 type ResponseWriter struct {
-	buffer bytes.Buffer
-
 	http.ResponseWriter
 }
 
-// Global variables
-var hosts []Host
 var StatusCode int
 
 func CreateConfig() *Config {
@@ -48,19 +46,24 @@ func CreateConfig() *Config {
 }
 
 // Inform if there are hosts in maintenance
-func Inform(config *Config) {
-	t := time.NewTicker(time.Second * config.InformInterval)
-	defer t.Stop()
+func (a *yatmp) Inform(config *Config) {
+	ticker := time.NewTicker(time.Second * config.InformInterval)
+	defer ticker.Stop()
 
-	for ; true; <-t.C {
-		client := http.Client{
-			Timeout: time.Second * config.InformTimeout,
+	client := &http.Client{
+		Timeout: time.Second * config.InformTimeout,
+	}
+
+	for range ticker.C {
+		req, err := http.NewRequest(http.MethodGet, config.InformUrl, nil)
+		if err != nil {
+			log.Printf("Inform: %v", err)
+			continue
 		}
 
-		req, _ := http.NewRequest(http.MethodGet, config.InformUrl, nil)
 		res, doErr := client.Do(req)
 		if doErr != nil {
-			log.Printf("Inform: %v", doErr) // Don't fatal, just go further
+			log.Printf("Inform: %v", doErr)
 			continue
 		}
 
@@ -68,17 +71,22 @@ func Inform(config *Config) {
 		StatusCode = res.StatusCode
 
 		if StatusCode != 404 {
+			var hosts []Host
 			decoder := json.NewDecoder(res.Body)
-			decodeErr := decoder.Decode(&hosts)
-			if decodeErr != nil {
-				log.Printf("Inform: %v", decodeErr) // Don't fatal, just go further
+			if decodeErr := decoder.Decode(&hosts); decodeErr != nil {
+				log.Printf("Inform: %v", decodeErr)
 				continue
 			}
+
+			// Safely update the hosts using mutex
+			a.mu.Lock()
+			a.hosts = hosts
+			a.mu.Unlock()
 		}
 	}
 }
 
-// Get all the client's ips
+// Get all the client's IPs, limit to a reasonable number
 func GetClientIps(req *http.Request) []string {
 	var ips []string
 
@@ -90,9 +98,13 @@ func GetClientIps(req *http.Request) []string {
 		ips = append(ips, ip)
 	}
 
+	// Limit the number of forwarded IPs to prevent abuse
 	forwardedFor := req.Header.Get("X-Forwarded-For")
 	if forwardedFor != "" {
 		for _, ip := range strings.Split(forwardedFor, ",") {
+			if len(ips) >= 10 {
+				break // Prevent appending more than 10 IPs
+			}
 			ips = append(ips, strings.TrimSpace(ip))
 		}
 	}
@@ -100,7 +112,7 @@ func GetClientIps(req *http.Request) []string {
 	return ips
 }
 
-// Check if one of the client ips has access
+// Check if one of the client's IPs has access
 func CheckIpAllowed(req *http.Request, host Host) bool {
 	for _, ip := range GetClientIps(req) {
 		for _, allowIp := range host.AllowIps {
@@ -109,13 +121,15 @@ func CheckIpAllowed(req *http.Request, host Host) bool {
 			}
 		}
 	}
-
 	return false
 }
 
 // Check if the host is under maintenance
-func CheckIfMaintenance(req *http.Request) bool {
-	for _, host := range hosts {
+func (a *yatmp) CheckIfMaintenance(req *http.Request) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	for _, host := range a.hosts {
 		if matched, _ := regexp.Match(host.Regex, []byte(req.Host)); matched {
 			return !CheckIpAllowed(req, host)
 		}
@@ -129,7 +143,8 @@ func (rw *ResponseWriter) Header() http.Header {
 }
 
 func (rw *ResponseWriter) Write(bytes []byte) (int, error) {
-	return rw.buffer.Write(bytes)
+	// Avoid buffering, write directly to the client
+	return rw.ResponseWriter.Write(bytes)
 }
 
 func (rw *ResponseWriter) WriteHeader(statusCode int) {
@@ -140,18 +155,20 @@ func (rw *ResponseWriter) WriteHeader(statusCode int) {
 }
 
 func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	go Inform(config)
-
-	return &yatmp{
+	y := &yatmp{
 		name:   name,
 		next:   next,
 		config: config,
-	}, nil
+	}
+
+	go y.Inform(config)
+
+	return y, nil
 }
 
 func (a *yatmp) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if StatusCode != 404 {
-		if CheckIfMaintenance(req) {
+		if a.CheckIfMaintenance(req) {
 			wrappedWriter := &ResponseWriter{
 				ResponseWriter: rw,
 			}
@@ -159,7 +176,6 @@ func (a *yatmp) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			a.next.ServeHTTP(wrappedWriter, req)
 
 			bytes := []byte{}
-
 			contentType := wrappedWriter.Header().Get("Content-Type")
 			if contentType != "" {
 				mt, _, _ := mime.ParseMediaType(contentType)
@@ -171,19 +187,14 @@ func (a *yatmp) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			if flusher, ok := rw.(http.Flusher); ok {
 				flusher.Flush()
 			}
-
 			return
 		}
 	}
 	a.next.ServeHTTP(rw, req)
 }
 
-// Maintenance page templates
-func getTemplate(mediaType string) []byte {
-	switch mediaType {
-
-	case "text/html":
-		return []byte(`<!DOCTYPE html>
+var templateCache = map[string][]byte{
+	"text/html": []byte(`<!DOCTYPE html>
 <html lang="en">
 <head>
 	<meta charset="utf-8">
@@ -199,14 +210,15 @@ func getTemplate(mediaType string) []byte {
 	<p>Please come back later.</p>
 	</div>
 </body>
-</html>`)
+</html>`),
+	"text/plain":       []byte("This page is under maintenance. Please come back later."),
+	"application/json": []byte("{\"message\": \"This page is under maintenance. Please come back later.\"}"),
+}
 
-	case "text/plain":
-		return []byte("This page is under maintenance. Please come back later.")
-
-	case "application/json":
-		return []byte("{\"message\": \"This page is under maintenance. Please come back later.\"}")
+// Maintenance page templates with caching
+func getTemplate(mediaType string) []byte {
+	if tmpl, exists := templateCache[mediaType]; exists {
+		return tmpl
 	}
-
 	return []byte{}
 }
